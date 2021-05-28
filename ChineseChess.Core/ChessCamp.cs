@@ -15,4 +15,10 @@
         /// </summary>
         Black,
     }
+
+    public static class ChessCampExtensions
+    {
+        public static ChessCamp RivalCamp(this ChessCamp camp)
+            => camp == ChessCamp.Red ? ChessCamp.Black : ChessCamp.Red;
+    }
 }

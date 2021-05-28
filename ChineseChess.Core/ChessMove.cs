@@ -1,27 +1,10 @@
-﻿using System;
-
-namespace ChineseChess.Core
+﻿namespace ChineseChess.Core
 {
     /// <summary>
     /// 棋子移动步骤
     /// </summary>
     public class ChessMove
     {
-        private ChessMove()
-        {
-
-        }
-
-        public static ChessMove GenMove(Chessboard chessboard, string move)
-        {
-            throw new NotImplementedException();
-        }
-
-        public static ChessMove GenMove(Chessboard chessboard, ChessCamp camp, ChessboardPosition start, ChessboardPosition end)
-        {
-            throw new NotImplementedException();
-        }
-
         /// <summary>
         /// 阵营
         /// </summary>
