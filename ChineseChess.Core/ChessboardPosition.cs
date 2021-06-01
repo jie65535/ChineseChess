@@ -48,6 +48,6 @@
             return new ChessboardPosition(left.Col - right.Col, left.Row - right.Row);
         }
 
-
+        public static ChessboardPosition Zero => new ChessboardPosition();
     }
 }

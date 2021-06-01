@@ -25,6 +25,44 @@ namespace ChineseChess.Core
 
         public IEnumerable<ChessMove> GetMoves() => Moves;
 
+        public void ResetChessboard()
+        {
+            AlivingChessman.Clear();
+            AlivingChessman.Add(new Chessman(ChessType.King     , ChessCamp.Red, new ChessboardPosition(4, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Mandarins, ChessCamp.Red, new ChessboardPosition(3, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Mandarins, ChessCamp.Red, new ChessboardPosition(5, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Knights  , ChessCamp.Red, new ChessboardPosition(2, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Knights  , ChessCamp.Red, new ChessboardPosition(6, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Elephants, ChessCamp.Red, new ChessboardPosition(1, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Elephants, ChessCamp.Red, new ChessboardPosition(7, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Rooks    , ChessCamp.Red, new ChessboardPosition(0, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Rooks    , ChessCamp.Red, new ChessboardPosition(8, 0)));
+            AlivingChessman.Add(new Chessman(ChessType.Cannons  , ChessCamp.Red, new ChessboardPosition(1, 2)));
+            AlivingChessman.Add(new Chessman(ChessType.Cannons  , ChessCamp.Red, new ChessboardPosition(7, 2)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Red, new ChessboardPosition(0, 3)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Red, new ChessboardPosition(2, 3)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Red, new ChessboardPosition(4, 3)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Red, new ChessboardPosition(6, 3)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Red, new ChessboardPosition(8, 3)));
+
+            AlivingChessman.Add(new Chessman(ChessType.King     , ChessCamp.Black, new ChessboardPosition(4, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Mandarins, ChessCamp.Black, new ChessboardPosition(3, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Mandarins, ChessCamp.Black, new ChessboardPosition(5, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Knights  , ChessCamp.Black, new ChessboardPosition(2, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Knights  , ChessCamp.Black, new ChessboardPosition(6, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Elephants, ChessCamp.Black, new ChessboardPosition(1, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Elephants, ChessCamp.Black, new ChessboardPosition(7, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Rooks    , ChessCamp.Black, new ChessboardPosition(0, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Rooks    , ChessCamp.Black, new ChessboardPosition(8, 9)));
+            AlivingChessman.Add(new Chessman(ChessType.Cannons  , ChessCamp.Black, new ChessboardPosition(1, 7)));
+            AlivingChessman.Add(new Chessman(ChessType.Cannons  , ChessCamp.Black, new ChessboardPosition(7, 7)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Black, new ChessboardPosition(0, 6)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Black, new ChessboardPosition(2, 6)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Black, new ChessboardPosition(4, 6)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Black, new ChessboardPosition(6, 6)));
+            AlivingChessman.Add(new Chessman(ChessType.Pawns    , ChessCamp.Black, new ChessboardPosition(8, 6)));
+        }
+
         /// <summary>
         /// 移动棋子到目标位置，若目标位置存在棋子，则移除
         /// </summary>

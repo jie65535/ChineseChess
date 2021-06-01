@@ -4,6 +4,12 @@ namespace ChineseChess.Core
 {
     public class Game
     {
-        // TODO
+        public Chessboard Chessboard { get; } = new Chessboard();
+
+        public Game()
+        {
+            Chessboard.ResetChessboard();
+        }
+
     }
 }
