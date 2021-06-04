@@ -5,6 +5,16 @@
     /// </summary>
     public class ChessMove
     {
+        public ChessMove(ChessCamp camp, ChessType chess, ChessType? killed, ChessboardPosition start, ChessboardPosition end, string text)
+        {
+            Camp=camp;
+            Chess=chess;
+            Killed=killed;
+            Start=start;
+            End=end;
+            Text=text;
+        }
+
         /// <summary>
         /// 阵营
         /// </summary>
