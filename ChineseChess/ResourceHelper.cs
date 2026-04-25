@@ -21,6 +21,8 @@ namespace ChineseChess
         private Dictionary<ChessType, Bitmap> _BlackChessmans = new Dictionary<ChessType, Bitmap>(7);
         private Bitmap[] Chessboards = new Bitmap[] { Resources.Chessboard1, Resources.Chessboard2 };
 
+        public Bitmap SelectBorderRed { get; } = Resources.SelectBorderRed;
+        public Bitmap SelectBorderGreen { get; } = Resources.SelectBorderGreen;
 
 
         public Size ChessmanBitmapSize { get; } = new Size(47, 46);

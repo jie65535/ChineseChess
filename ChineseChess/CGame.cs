@@ -1,38 +1,108 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 
 using ChineseChess.Core;
 
 namespace ChineseChess
 {
+    /// <summary>
+    /// 棋盘交互控件：负责渲染棋盘、棋子，并把鼠标操作翻译为 Game 的着法
+    /// </summary>
     internal class CGame : Control
     {
         private Bitmap _ChessboardBitmap;
-        private ResourceHelper _ResHelper;
+        private readonly ResourceHelper _ResHelper;
 
-        private Game _Game;
+        private readonly Game _Game;
         private ChessboardPosition? _CurrMouseOverPos;
         private Chessman _CurrSelectedChessman;
+        private List<ChessboardPosition> _LegalTargets = new List<ChessboardPosition>();
+        private int _BoardIndex;
+
+        /// <summary>对外暴露的对局实例</summary>
+        public Game Game => _Game;
+
+        /// <summary>非法走子提示</summary>
+        public event EventHandler<string> InvalidMoveAttempted;
 
         public CGame()
         {
             DoubleBuffered = true;
             _ResHelper = ResourceHelper.Instance;
-            _ChessboardBitmap = _ResHelper.GetChessboardBitmap(0);
+            _BoardIndex = 0;
+            _ChessboardBitmap = _ResHelper.GetChessboardBitmap(_BoardIndex);
             MinimumSize = MaximumSize = Size = _ChessboardBitmap.Size;
             _Game = new Game();
+            _Game.StateChanged += OnGameStateChanged;
+        }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _Game.StateChanged -= OnGameStateChanged;
+            }
+            base.Dispose(disposing);
+        }
+
+        /// <summary>棋盘模式总数：位图1、位图2、自绘</summary>
+        private const int BoardModeCount = 3;
+
+        public void SwitchBoard()
+        {
+            _BoardIndex = (_BoardIndex + 1) % BoardModeCount;
+            if (_BoardIndex < 2)
+                _ChessboardBitmap = _ResHelper.GetChessboardBitmap(_BoardIndex);
+            Invalidate();
+        }
+
+        private void OnGameStateChanged(object sender, EventArgs e)
+        {
+            ClearSelection();
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs pevent)
         {
+            var g = pevent.Graphics;
+
+            // 最近一步标记（起点 + 终点，红色细框）
+            var last = _Game.Chessboard.LastMove;
+            if (last != null)
+            {
+                DrawLastMoveMark(g, last.Start);
+                DrawLastMoveMark(g, last.End);
+            }
+
+            // 棋子
             foreach (var chessman in _Game.Chessboard.GetChessmen())
-                DrawChessman(pevent.Graphics, chessman);
+                DrawChessman(g, chessman);
 
-            if (_CurrSelectedChessman != null && _CurrMouseOverPos.HasValue && _CurrSelectedChessman.Position != _CurrMouseOverPos.Value)
-                DrawChessman(pevent.Graphics, _CurrSelectedChessman, _CurrMouseOverPos.Value);
+            // 选中棋子的边框
+            if (_CurrSelectedChessman != null)
+            {
+                var border = _CurrSelectedChessman.Camp == ChessCamp.Red
+                    ? _ResHelper.SelectBorderRed
+                    : _ResHelper.SelectBorderGreen;
+                DrawImageByCentre(g, border, GetChessboardGridPoint(_CurrSelectedChessman.Position));
+            }
 
+            // 合法落点提示
+            foreach (var t in _LegalTargets)
+            {
+                DrawTargetHint(g, t);
+            }
+
+            // 鼠标悬停在合法落点时画半透明预览
+            if (_CurrSelectedChessman != null
+                && _CurrMouseOverPos.HasValue
+                && _LegalTargets.Contains(_CurrMouseOverPos.Value))
+            {
+                DrawChessmanGhost(g, _CurrSelectedChessman, _CurrMouseOverPos.Value);
+            }
 
             base.OnPaint(pevent);
         }
@@ -40,41 +110,82 @@ namespace ChineseChess
         protected override void OnMouseMove(MouseEventArgs e)
         {
             var pos = GetChessboardPosition(e.Location);
-            if (_CurrMouseOverPos != pos)
+            if (_CurrMouseOverPos.Equals(pos) == false)
             {
                 _CurrMouseOverPos = pos;
+                // 改变光标形状以提供反馈
+                if (pos.HasValue)
+                {
+                    if (_CurrSelectedChessman != null && _LegalTargets.Contains(pos.Value))
+                        Cursor = Cursors.Hand;
+                    else if (_Game.Chessboard.GetChessmanByPos(pos.Value)?.Camp == _Game.CurrentCamp && !_Game.IsGameOver)
+                        Cursor = Cursors.Hand;
+                    else
+                        Cursor = Cursors.Default;
+                }
+                else
+                {
+                    Cursor = Cursors.Default;
+                }
                 Invalidate();
             }
             base.OnMouseMove(e);
         }
 
-        protected override void OnClick(EventArgs e)
+        protected override void OnMouseLeave(EventArgs e)
         {
-            try
+            if (_CurrMouseOverPos.HasValue)
             {
-                Chessman selected = null;
-                if (_CurrMouseOverPos.HasValue)
-                    selected = _Game.Chessboard.GetChessmanByPos(_CurrMouseOverPos.Value);
-                if (_CurrSelectedChessman == null)
-                {
-                    if (selected != null)
-                    {
-                        _CurrSelectedChessman = selected;
-                        Invalidate();
-                    }
-                }
-                else if (_CurrSelectedChessman != selected)
-                {
-                    _Game.Chessboard.PushMove(new ChessMove(_CurrSelectedChessman.Camp, _CurrSelectedChessman.Type, selected?.Type, _CurrSelectedChessman.Position, _CurrMouseOverPos.Value, string.Empty));
-                    _CurrSelectedChessman = null;
-                    Invalidate();
-                }
+                _CurrMouseOverPos = null;
+                Cursor = Cursors.Default;
+                Invalidate();
             }
-            catch (Exception ex)
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            if (e.Button != MouseButtons.Left) return;
+            if (_Game.IsGameOver) return;
+            var clicked = GetChessboardPosition(e.Location);
+            if (!clicked.HasValue) return;
+
+            // 已有选中棋子，且点击合法落点 → 走子
+            if (_CurrSelectedChessman != null && _LegalTargets.Contains(clicked.Value))
             {
-                MessageBox.Show(ex.Message, "异常", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                string error;
+                if (!_Game.TryMove(_CurrSelectedChessman.Position, clicked.Value, out error))
+                {
+                    InvalidMoveAttempted?.Invoke(this, error);
+                }
+                return; // StateChanged 事件会触发 ClearSelection + Invalidate
             }
-            base.OnClick(e);
+
+            // 否则按当前阵营是否能选中处理
+            var target = _Game.Chessboard.GetChessmanByPos(clicked.Value);
+            if (target != null && target.Camp == _Game.CurrentCamp)
+            {
+                Select(target);
+            }
+            else
+            {
+                ClearSelection();
+                Invalidate();
+            }
+        }
+
+        private void Select(Chessman chess)
+        {
+            _CurrSelectedChessman = chess;
+            _LegalTargets = ChessReferee.GetLegalTargets(_Game.Chessboard, chess).ToList();
+            Invalidate();
+        }
+
+        private void ClearSelection()
+        {
+            _CurrSelectedChessman = null;
+            _LegalTargets.Clear();
         }
 
         private void DrawChessman(Graphics g, Chessman chessman)
@@ -82,9 +193,51 @@ namespace ChineseChess
             DrawImageByCentre(g, _ResHelper.GetChessmanBitmap(chessman.Type, chessman.Camp), GetChessboardGridPoint(chessman.Position));
         }
 
-        private void DrawChessman(Graphics g, Chessman chessman, ChessboardPosition pos)
+        private void DrawChessmanGhost(Graphics g, Chessman chessman, ChessboardPosition pos)
         {
-            DrawImageByCentre(g, _ResHelper.GetChessmanBitmap(chessman.Type, chessman.Camp), GetChessboardGridPoint(pos));
+            var bitmap = _ResHelper.GetChessmanBitmap(chessman.Type, chessman.Camp);
+            var pt = GetChessboardGridPoint(pos);
+            // 用 ColorMatrix 做半透明绘制
+            using (var attrs = new System.Drawing.Imaging.ImageAttributes())
+            {
+                var matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.55f };
+                attrs.SetColorMatrix(matrix);
+                var rect = new Rectangle(pt.X - bitmap.Width / 2, pt.Y - bitmap.Height / 2, bitmap.Width, bitmap.Height);
+                g.DrawImage(bitmap, rect, 0, 0, bitmap.Width, bitmap.Height, GraphicsUnit.Pixel, attrs);
+            }
+        }
+
+        private void DrawTargetHint(Graphics g, ChessboardPosition pos)
+        {
+            var pt = GetChessboardGridPoint(pos);
+            int radius = 8;
+            var occupied = _Game.Chessboard.GetChessmanByPos(pos);
+            using (var brush = new SolidBrush(Color.FromArgb(140, occupied != null ? Color.OrangeRed : Color.LimeGreen)))
+            {
+                if (occupied != null)
+                {
+                    // 以空心圆框表示可吃子
+                    using (var pen = new Pen(brush.Color, 3))
+                    {
+                        int s = _ResHelper.ChessmanBitmapSize.Width / 2 + 2;
+                        g.DrawEllipse(pen, pt.X - s, pt.Y - s, s * 2, s * 2);
+                    }
+                }
+                else
+                {
+                    g.FillEllipse(brush, pt.X - radius, pt.Y - radius, radius * 2, radius * 2);
+                }
+            }
+        }
+
+        private void DrawLastMoveMark(Graphics g, ChessboardPosition pos)
+        {
+            var pt = GetChessboardGridPoint(pos);
+            int s = _ResHelper.ChessboardCellSize.Width / 2 - 2;
+            using (var pen = new Pen(Color.FromArgb(180, Color.DodgerBlue), 2))
+            {
+                g.DrawRectangle(pen, pt.X - s, pt.Y - s, s * 2, s * 2);
+            }
         }
 
         private void DrawChessborad(Graphics g, Rectangle rect, Pen pen)
@@ -193,19 +346,24 @@ namespace ChineseChess
             x /= _ResHelper.ChessboardCellSize.Width;
             y /= _ResHelper.ChessboardCellSize.Height;
             return new ChessboardPosition(x, _ResHelper.ChessboardSize.Height - y - 1);
-
         }
 
         private void DrawImageByCentre(Graphics g, Image image, Point point)
         {
-            g.DrawImage(image, point.X - image.Width/2, point.Y - image.Height/2, image.Width, image.Height);
+            g.DrawImage(image, point.X - image.Width / 2, point.Y - image.Height / 2, image.Width, image.Height);
         }
 
         protected override void OnPaintBackground(PaintEventArgs pevent)
         {
-            //pevent.Graphics.FillRectangle(Brushes.White, pevent.ClipRectangle);
-            //DrawChessborad(pevent.Graphics, new Rectangle(((Point)_ResHelper.ChessboardOffset), _ResHelper.ChessboardGridSize), Pens.Black);
-            pevent.Graphics.DrawImage(_ChessboardBitmap, 0, 0, _ChessboardBitmap.Width, _ChessboardBitmap.Height);
+            if (_BoardIndex < 2)
+            {
+                pevent.Graphics.DrawImage(_ChessboardBitmap, 0, 0, _ChessboardBitmap.Width, _ChessboardBitmap.Height);
+            }
+            else
+            {
+                pevent.Graphics.FillRectangle(Brushes.White, pevent.ClipRectangle);
+                DrawChessborad(pevent.Graphics, new Rectangle(((Point)_ResHelper.ChessboardOffset), _ResHelper.ChessboardGridSize), Pens.Black);
+            }
         }
     }
 }
