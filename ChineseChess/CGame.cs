@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using ChineseChess.Core;
+using ChineseChess.Core.AI;
 
 namespace ChineseChess
 {
@@ -22,11 +26,56 @@ namespace ChineseChess
         private List<ChessboardPosition> _LegalTargets = new List<ChessboardPosition>();
         private int _BoardIndex;
 
+        // ===== AI 相关 =====
+        private readonly ChessAI _AI = new ChessAI();
+        private CancellationTokenSource _AICts;
+        private ChessCamp? _AICamp;
+        private AISettings _AISettings = AISettings.Medium;
+        public bool IsAIThinking { get; private set; }
+        public AIDecision LastAIDecision { get; private set; }
+
         /// <summary>对外暴露的对局实例</summary>
         public Game Game => _Game;
 
         /// <summary>非法走子提示</summary>
         public event EventHandler<string> InvalidMoveAttempted;
+
+        /// <summary>AI 状态发生变化（开始/结束思考、走完棋）</summary>
+        public event EventHandler AIStateChanged;
+
+        /// <summary>AI 执子方；为 null 时不启用 AI</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public ChessCamp? AICamp
+        {
+            get => _AICamp;
+            set
+            {
+                if (_AICamp == value) return;
+                _AICamp = value;
+                CancelAI();
+                MaybeStartAI();
+                AIStateChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>AI 难度设置</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public AISettings AISettings
+        {
+            get => _AISettings;
+            set
+            {
+                _AISettings = value ?? AISettings.Medium;
+                // 若 AI 正在思考，让它用新的设置重启
+                if (IsAIThinking)
+                {
+                    CancelAI();
+                    MaybeStartAI();
+                }
+            }
+        }
 
         public CGame()
         {
@@ -43,6 +92,7 @@ namespace ChineseChess
         {
             if (disposing)
             {
+                CancelAI();
                 _Game.StateChanged -= OnGameStateChanged;
             }
             base.Dispose(disposing);
@@ -63,6 +113,85 @@ namespace ChineseChess
         {
             ClearSelection();
             Invalidate();
+            // 棋面变了，先取消可能尚未结束的旧 AI 思考，再决定是否启动新一轮
+            CancelAI();
+            MaybeStartAI();
+        }
+
+        private void MaybeStartAI()
+        {
+            if (_AICamp == null) return;
+            if (_Game.IsGameOver) return;
+            if (_Game.CurrentCamp != _AICamp.Value) return;
+            if (IsAIThinking) return;
+            if (!IsHandleCreated) return; // 等控件就绪后再启动
+            StartAI();
+        }
+
+        private void StartAI()
+        {
+            var cts = new CancellationTokenSource();
+            _AICts = cts;
+            IsAIThinking = true;
+            AIStateChanged?.Invoke(this, EventArgs.Empty);
+
+            var settings = _AISettings;
+            var task = _AI.ThinkAsync(_Game.Chessboard, _Game.CurrentCamp, settings, cts.Token);
+            task.ContinueWith(t =>
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                try
+                {
+                    BeginInvoke(new Action(() => OnAIDone(t, cts)));
+                }
+                catch (ObjectDisposedException) { }
+                catch (InvalidOperationException) { }
+            });
+        }
+
+        private void OnAIDone(Task<AIDecision> t, CancellationTokenSource cts)
+        {
+            // 如果当前 cts 已被替换，说明这次思考已被取消，丢弃结果
+            if (cts != _AICts) return;
+            _AICts = null;
+            IsAIThinking = false;
+
+            if (t.IsCanceled || t.IsFaulted)
+            {
+                AIStateChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            var decision = t.Result;
+            LastAIDecision = decision;
+            AIStateChanged?.Invoke(this, EventArgs.Empty);
+
+            if (decision == null || !decision.IsValid) return;
+            // 防御性校验：确保起点有 AI 阵营的棋子（如果在等待期间发生了 Reset，AICamp 可能已变）
+            if (_AICamp == null || _Game.CurrentCamp != _AICamp.Value || _Game.IsGameOver) return;
+            if (!_Game.TryMove(decision.From, decision.To, out var err))
+            {
+                InvalidMoveAttempted?.Invoke(this, $"AI 走子失败：{err}");
+            }
+        }
+
+        private void CancelAI()
+        {
+            if (_AICts == null) return;
+            try { _AICts.Cancel(); } catch (ObjectDisposedException) { }
+            _AICts = null;
+            if (IsAIThinking)
+            {
+                IsAIThinking = false;
+                AIStateChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // 控件就绪后再尝试启动 AI（针对 AI 执红、首步即由 AI 出招的情况）
+            MaybeStartAI();
         }
 
         protected override void OnPaint(PaintEventArgs pevent)
@@ -113,12 +242,15 @@ namespace ChineseChess
             if (_CurrMouseOverPos.Equals(pos) == false)
             {
                 _CurrMouseOverPos = pos;
+                bool humanTurn = !_Game.IsGameOver
+                    && !IsAIThinking
+                    && (!_AICamp.HasValue || _Game.CurrentCamp != _AICamp.Value);
                 // 改变光标形状以提供反馈
-                if (pos.HasValue)
+                if (pos.HasValue && humanTurn)
                 {
                     if (_CurrSelectedChessman != null && _LegalTargets.Contains(pos.Value))
                         Cursor = Cursors.Hand;
-                    else if (_Game.Chessboard.GetChessmanByPos(pos.Value)?.Camp == _Game.CurrentCamp && !_Game.IsGameOver)
+                    else if (_Game.Chessboard.GetChessmanByPos(pos.Value)?.Camp == _Game.CurrentCamp)
                         Cursor = Cursors.Hand;
                     else
                         Cursor = Cursors.Default;
@@ -148,6 +280,9 @@ namespace ChineseChess
             base.OnMouseClick(e);
             if (e.Button != MouseButtons.Left) return;
             if (_Game.IsGameOver) return;
+            if (IsAIThinking) return;
+            // 不是人类一方时，禁止操作
+            if (_AICamp.HasValue && _Game.CurrentCamp == _AICamp.Value) return;
             var clicked = GetChessboardPosition(e.Location);
             if (!clicked.HasValue) return;
 
